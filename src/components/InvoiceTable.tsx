@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import InvoiceDetailModal from "./InvoiceDetailModal";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 const PAGE_SIZE = 10;
