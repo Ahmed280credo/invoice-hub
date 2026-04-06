@@ -158,7 +158,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDelete(inv.id)}
+                            onClick={() => setDeleteId(inv.id)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -207,6 +207,21 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         open={modalOpen}
         onOpenChange={setModalOpen}
       />
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this invoice? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
