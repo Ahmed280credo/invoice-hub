@@ -46,6 +46,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Tables<"invoices"> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     if (!user) return;
@@ -79,9 +80,17 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
     setPage(0);
   }, [statusFilter]);
 
-  const handleDelete = async (id: string) => {
-    await supabase.from("invoices").delete().eq("id", id);
-    fetchInvoices();
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const { error } = await supabase.from("invoices").delete().eq("id", deleteId);
+    if (!error) {
+      toast.success("Invoice deleted successfully");
+      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteId));
+      setTotal((prev) => prev - 1);
+    } else {
+      toast.error("Failed to delete invoice");
+    }
+    setDeleteId(null);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
