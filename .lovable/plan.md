@@ -1,57 +1,35 @@
 
 
-# Invoice Processing SaaS Dashboard — Implementation Plan
+# Two Fixes for Invoice Dashboard
 
-## Overview
-A full-featured invoice processing dashboard with Supabase auth, file upload to an n8n webhook, and invoice tracking with pagination and filtering.
+## Fix 1 — Status Update After Processing
 
-## Key Technical Details
-- **Webhook**: POST to `https://mfin1.app.n8n.cloud/webhook-test/process-invoice`
-- **FormData field**: `"files"` — all staged files sent in one request
-- **Response handling**: Use `response.text()`, treat ANY response as success. Only show error if `fetch` throws (catch block).
-- **No file storage**: Files are sent to n8n only. Only metadata saved to `invoices` table. `file_url` stays null.
+**Current behavior**: All files are sent in one batch POST, then all rows inserted with status "Processing" — status never changes.
 
-## Steps
+**New behavior**: Change the upload flow to send files individually so each file's status can be updated based on its webhook result.
 
-### 1. Supabase Schema (Migrations)
-- Create `profiles` table (id, email, full_name, company, avatar_url, created_at) with RLS and auto-create trigger on signup
-- Create `invoices` table (id, user_id, file_name, file_size, status default 'Pending', uploaded_at, file_url nullable) with RLS — users see only their own rows
+- Loop through staged files one by one
+- For each file: POST to webhook, then insert row with status `"Processed"` on success or `"Failed"` on catch
+- This eliminates the need for a separate update call — we just set the correct status at insert time
+- Show per-file spinner during its upload
 
-### 2. Auth Pages
-- Create `src/pages/Auth.tsx` — login/signup form using Supabase email+password auth
-- Create `src/hooks/useAuth.ts` — auth state hook with `onAuthStateChange`
-- Add protected route wrapper; unauthenticated users redirect to `/auth`
+**Alternative** (if you want to keep batch POST): Insert all rows as "Processing" first, then update each row's status to "Processed" after the single webhook succeeds, or "Failed" on catch. This requires an UPDATE RLS policy on the invoices table (currently missing).
 
-### 3. Dashboard Layout (`src/pages/Index.tsx`)
-- Header: app name left, user email + Sign Out button right
-- Two-column grid (responsive, stacks on mobile): Upload panel left, Invoice table right
+**Recommendation**: Add an UPDATE RLS policy and keep the batch POST. After the webhook call resolves, update all inserted rows to "Processed". On catch, update them to "Failed".
 
-### 4. Upload Panel (`src/components/UploadPanel.tsx`)
-- Drag-and-drop zone (PDF, JPG, PNG, max 10MB each, max 20 files)
-- Staging area with file name, size, remove button
-- "Upload All (N files)" button → builds `FormData`, appends each file under field `"files"`, POSTs to webhook
-- No manual `Content-Type` header
-- Loading spinner per row during upload
-- On success: clear staging, insert rows into `invoices` with status "Processing"
-- On catch: show red error message
-- Warning if >20 files
+### Changes needed:
+- **Migration**: Add UPDATE RLS policy on `invoices` table for own rows
+- **UploadPanel.tsx**: After webhook success, update inserted rows' status to "Processed". On catch, update to "Failed"
 
-### 5. Invoice Table (`src/components/InvoiceTable.tsx`)
-- Columns: File Name, Size, Status, Uploaded Date, Actions
-- Status badges: Pending (yellow), Processing (blue), Completed (green), Failed (red)
-- Status filter dropdown
-- Pagination with page controls
-- Actions: eye icon → metadata modal, trash icon → delete record
+## Fix 2 — Delete Confirmation Dialog + Toast
 
-### 6. View Details Modal (`src/components/InvoiceDetailModal.tsx`)
-- Shows file name, size, status badge, upload date
+**Current behavior**: Delete button exists but has no confirmation and no toast.
 
-### 7. Supabase Client & Integration
-- Create `src/integrations/supabase/client.ts` and typed helpers
-- Wire up all CRUD operations for invoices
+**Changes**:
+- **InvoiceTable.tsx**: Add `AlertDialog` confirmation before deleting. On confirm, delete the row and show `toast.success("Invoice deleted successfully")` via sonner.
 
-### 8. Routing
-- `/auth` — login/signup
-- `/` — protected dashboard
-- `*` — 404
+### Files to modify:
+1. `src/components/UploadPanel.tsx` — status update logic
+2. `src/components/InvoiceTable.tsx` — delete confirmation + toast
+3. Migration — UPDATE RLS policy on invoices
 
