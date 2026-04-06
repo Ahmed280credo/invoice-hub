@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import InvoiceDetailModal from "./InvoiceDetailModal";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 const PAGE_SIZE = 10;
@@ -41,6 +46,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Tables<"invoices"> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     if (!user) return;
@@ -74,9 +80,17 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
     setPage(0);
   }, [statusFilter]);
 
-  const handleDelete = async (id: string) => {
-    await supabase.from("invoices").delete().eq("id", id);
-    fetchInvoices();
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const { error } = await supabase.from("invoices").delete().eq("id", deleteId);
+    if (!error) {
+      toast.success("Invoice deleted successfully");
+      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteId));
+      setTotal((prev) => prev - 1);
+    } else {
+      toast.error("Failed to delete invoice");
+    }
+    setDeleteId(null);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -144,7 +158,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleDelete(inv.id)}
+                            onClick={() => setDeleteId(inv.id)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -193,6 +207,21 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         open={modalOpen}
         onOpenChange={setModalOpen}
       />
+
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this invoice? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

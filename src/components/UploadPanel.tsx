@@ -76,29 +76,51 @@ export default function UploadPanel({ onUploadComplete }: UploadPanelProps) {
     const formData = new FormData();
     stagedFiles.forEach((f) => formData.append("files", f));
 
+    // Insert metadata rows first as "Processing"
+    const rows = stagedFiles.map((f) => ({
+      user_id: user.id,
+      file_name: f.name,
+      file_size: f.size,
+      status: "Processing",
+    }));
+
+    const { data: inserted, error: dbError } = await supabase
+      .from("invoices")
+      .insert(rows)
+      .select("id");
+
+    if (dbError) {
+      setError("Failed to save records: " + dbError.message);
+      setUploading(false);
+      return;
+    }
+
+    const insertedIds = inserted?.map((r) => r.id) ?? [];
+
     try {
       await fetch(WEBHOOK_URL, { method: "POST", body: formData });
 
-      // Insert metadata rows into invoices table
-      const rows = stagedFiles.map((f) => ({
-        user_id: user.id,
-        file_name: f.name,
-        file_size: f.size,
-        status: "Processing",
-      }));
-
-      const { error: dbError } = await supabase.from("invoices").insert(rows);
-      if (dbError) {
-        setError("Files sent but failed to save records: " + dbError.message);
-        setUploading(false);
-        return;
+      // Update all inserted rows to "Processed"
+      if (insertedIds.length > 0) {
+        await supabase
+          .from("invoices")
+          .update({ status: "Processed" })
+          .in("id", insertedIds);
       }
 
       setStagedFiles([]);
       setWarning("");
       onUploadComplete();
     } catch {
+      // Update all inserted rows to "Failed"
+      if (insertedIds.length > 0) {
+        await supabase
+          .from("invoices")
+          .update({ status: "Failed" })
+          .in("id", insertedIds);
+      }
       setError("Network error — could not reach the processing server. Please try again.");
+      onUploadComplete();
     } finally {
       setUploading(false);
     }
