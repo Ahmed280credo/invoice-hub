@@ -37,6 +37,11 @@ interface InvoiceTableProps {
   refreshKey: number;
 }
 
+interface DeleteWebhookResult {
+  ok?: boolean;
+  externalStatus?: number;
+}
+
 export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const { user } = useAuth();
   const [invoices, setInvoices] = useState<Tables<"invoices">[]>([]);
@@ -90,14 +95,24 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
 
       // Notify external webhook to remove from Google Sheets
       try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-        await fetch(`https://${projectId}.supabase.co/functions/v1/delete-invoice-webhook`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invoice_number: deleteInvoice.file_name }),
-        });
+        const { data: webhookResult, error: webhookError } = await supabase.functions.invoke<DeleteWebhookResult>(
+          "delete-invoice-webhook",
+          {
+            body: { invoice_number: deleteInvoice.file_name },
+          },
+        );
+
+        if (webhookError) {
+          toast.warning("Invoice deleted, but the external service could not be reached");
+        } else if (webhookResult?.ok === false) {
+          toast.warning(
+            webhookResult.externalStatus === 404
+              ? "Invoice deleted, but the external workflow is inactive"
+              : "Invoice deleted, but the external service did not accept the request",
+          );
+        }
       } catch {
-        toast.warning("Invoice deleted but failed to notify external service");
+        toast.warning("Invoice deleted, but the external service could not be reached");
       }
     } else {
       toast.error("Failed to delete invoice");
