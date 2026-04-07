@@ -46,7 +46,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Tables<"invoices"> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteInvoice, setDeleteInvoice] = useState<Tables<"invoices"> | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     if (!user) return;
