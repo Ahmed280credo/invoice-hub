@@ -90,7 +90,8 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
 
       // Notify external webhook to remove from Google Sheets
       try {
-        await fetch("https://mfin1.app.n8n.cloud/webhook/delete-invoice", {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        await fetch(`https://${projectId}.supabase.co/functions/v1/delete-invoice-webhook`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ invoice_number: deleteInvoice.file_name }),
