@@ -169,7 +169,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setDeleteId(inv.id)}
+                            onClick={() => setDeleteInvoice(inv)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
