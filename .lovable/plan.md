@@ -1,22 +1,24 @@
 
 
-# Add Webhook Call on Invoice Deletion
+# Fix: Proxy Delete-Invoice Webhook Through Backend Function
 
-## Change
-In `src/components/InvoiceTable.tsx`, after the Supabase `.delete()` succeeds, POST to `https://mfin1.app.n8n.cloud/webhook/delete-invoice` with `{ "invoice_number": inv.file_name }`.
+## Problem
+The browser blocks the direct POST to `https://mfin1.app.n8n.cloud/webhook/delete-invoice` due to CORS. The n8n server doesn't return `Access-Control-Allow-Origin` headers, causing every request to fail with "Failed to fetch."
 
-### Details
-- In `handleDelete`, after the successful Supabase delete, add a `fetch` call:
-  ```
-  POST https://mfin1.app.n8n.cloud/webhook/delete-invoice
-  Content-Type: application/json
-  Body: { "invoice_number": <file_name of the deleted invoice> }
-  ```
-- Need to look up the `file_name` from the `invoices` state using `deleteId` before the delete call (or capture it when setting `deleteId`)
-- Use `response.text()` — treat any response as success (consistent with existing webhook pattern)
-- If the webhook fetch throws a network error, show a warning toast but still consider the Supabase deletion successful
-- No database or RLS changes needed
+## Solution
+Create a backend function that proxies the webhook call server-side (no CORS restrictions on server-to-server calls).
 
-### File modified
-- `src/components/InvoiceTable.tsx` — update `handleDelete` function and store the full invoice (not just id) for deletion context
+### Step 1 — Create Edge Function `delete-invoice-webhook`
+- Accepts POST with `{ "invoice_number": "..." }`
+- Forwards the request to `https://mfin1.app.n8n.cloud/webhook/delete-invoice`
+- Returns the n8n response status back to the client
+- Includes proper CORS headers for the Lovable frontend
+
+### Step 2 — Update `InvoiceTable.tsx`
+- Change the fetch URL from the n8n webhook to the new edge function URL
+- Everything else stays the same (error handling, toast messages)
+
+### Files
+- **New**: `supabase/functions/delete-invoice-webhook/index.ts`
+- **Modified**: `src/components/InvoiceTable.tsx` — update webhook URL
 
