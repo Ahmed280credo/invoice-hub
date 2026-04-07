@@ -46,7 +46,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const [loading, setLoading] = useState(true);
   const [selectedInvoice, setSelectedInvoice] = useState<Tables<"invoices"> | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteInvoice, setDeleteInvoice] = useState<Tables<"invoices"> | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     if (!user) return;
@@ -81,16 +81,27 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   }, [statusFilter]);
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    const { error } = await supabase.from("invoices").delete().eq("id", deleteId);
+    if (!deleteInvoice) return;
+    const { error } = await supabase.from("invoices").delete().eq("id", deleteInvoice.id);
     if (!error) {
       toast.success("Invoice deleted successfully");
-      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteId));
+      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteInvoice.id));
       setTotal((prev) => prev - 1);
+
+      // Notify external webhook to remove from Google Sheets
+      try {
+        await fetch("https://mfin1.app.n8n.cloud/webhook/delete-invoice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invoice_number: deleteInvoice.file_name }),
+        });
+      } catch {
+        toast.warning("Invoice deleted but failed to notify external service");
+      }
     } else {
       toast.error("Failed to delete invoice");
     }
-    setDeleteId(null);
+    setDeleteInvoice(null);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -158,7 +169,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => setDeleteId(inv.id)}
+                            onClick={() => setDeleteInvoice(inv)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -208,7 +219,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         onOpenChange={setModalOpen}
       />
 
-      <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+      <AlertDialog open={!!deleteInvoice} onOpenChange={(open) => { if (!open) setDeleteInvoice(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
