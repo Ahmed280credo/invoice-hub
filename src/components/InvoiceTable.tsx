@@ -81,16 +81,27 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   }, [statusFilter]);
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    const { error } = await supabase.from("invoices").delete().eq("id", deleteId);
+    if (!deleteInvoice) return;
+    const { error } = await supabase.from("invoices").delete().eq("id", deleteInvoice.id);
     if (!error) {
       toast.success("Invoice deleted successfully");
-      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteId));
+      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteInvoice.id));
       setTotal((prev) => prev - 1);
+
+      // Notify external webhook to remove from Google Sheets
+      try {
+        await fetch("https://mfin1.app.n8n.cloud/webhook/delete-invoice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invoice_number: deleteInvoice.file_name }),
+        });
+      } catch {
+        toast.warning("Invoice deleted but failed to notify external service");
+      }
     } else {
       toast.error("Failed to delete invoice");
     }
-    setDeleteId(null);
+    setDeleteInvoice(null);
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
