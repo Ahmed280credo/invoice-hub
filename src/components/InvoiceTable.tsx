@@ -102,7 +102,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         const { data: webhookResult, error: webhookError } = await supabase.functions.invoke<DeleteWebhookResult>(
           "delete-invoice-webhook",
           {
-            body: { invoice_number: invoiceNumber },
+            body: { invoice_number: invoiceNumberToSend },
           },
         );
 
