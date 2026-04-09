@@ -95,13 +95,14 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
 
       // Notify external webhook to remove from Google Sheets
       try {
-        const match = deleteInvoice.file_name.match(/(\d+)\.pdf$/i);
-        const invoiceNumber = match ? match[1] : deleteInvoice.file_name;
+        const rawInvoiceNumber = (deleteInvoice as any).invoice_number ?? deleteInvoice.file_name ?? "";
+        const match = rawInvoiceNumber.match(/(\d+)(?:\.pdf)?$/i);
+        const invoiceNumberToSend = match ? match[1] : rawInvoiceNumber;
 
         const { data: webhookResult, error: webhookError } = await supabase.functions.invoke<DeleteWebhookResult>(
           "delete-invoice-webhook",
           {
-            body: { invoice_number: invoiceNumber },
+            body: { invoice_number: invoiceNumberToSend },
           },
         );
 
