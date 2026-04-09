@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 const MAX_FILES = 20;
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png"];
-const WEBHOOK_URL = "https://mfin1.app.n8n.cloud/webhook-test/process-invoice";
+const WEBHOOK_URL = "https://mfin1.app.n8n.cloud/webhook/process-invoice";
 
 interface UploadPanelProps {
   onUploadComplete: () => void;
