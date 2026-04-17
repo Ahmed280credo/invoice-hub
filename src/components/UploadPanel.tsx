@@ -2,8 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, X, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useCurrentOrg } from "@/hooks/useCurrentOrg";
 
 const MAX_FILES = 20;
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
@@ -27,7 +26,7 @@ export default function UploadPanel({ onUploadComplete }: UploadPanelProps) {
   const [warning, setWarning] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { user } = useAuth();
+  const { currentOrg } = useCurrentOrg();
 
   const addFiles = useCallback((files: FileList | File[]) => {
     setError("");
@@ -69,56 +68,27 @@ export default function UploadPanel({ onUploadComplete }: UploadPanelProps) {
   }, [addFiles]);
 
   const handleUpload = async () => {
-    if (!user || stagedFiles.length === 0) return;
+    if (!currentOrg || stagedFiles.length === 0) {
+      if (!currentOrg) setError("No organization selected.");
+      return;
+    }
     setUploading(true);
     setError("");
 
     const formData = new FormData();
+    formData.append("org_id", currentOrg.id);
     stagedFiles.forEach((f) => formData.append("files", f));
 
-    // Insert metadata rows first as "Processing"
-    const rows = stagedFiles.map((f) => ({
-      user_id: user.id,
-      file_name: f.name,
-      file_size: f.size,
-      status: "Processing",
-    }));
-
-    const { data: inserted, error: dbError } = await supabase
-      .from("invoices")
-      .insert(rows)
-      .select("id");
-
-    if (dbError) {
-      setError("Failed to save records: " + dbError.message);
-      setUploading(false);
-      return;
-    }
-
-    const insertedIds = inserted?.map((r) => r.id) ?? [];
-
     try {
-      await fetch(WEBHOOK_URL, { method: "POST", body: formData });
-
-      // Update all inserted rows to "Processed"
-      if (insertedIds.length > 0) {
-        await supabase
-          .from("invoices")
-          .update({ status: "Processed" })
-          .in("id", insertedIds);
+      const response = await fetch(WEBHOOK_URL, { method: "POST", body: formData });
+      if (!response.ok) {
+        setError(`Upload failed (status ${response.status}). Please try again.`);
+      } else {
+        setStagedFiles([]);
+        setWarning("");
       }
-
-      setStagedFiles([]);
-      setWarning("");
       onUploadComplete();
     } catch {
-      // Update all inserted rows to "Failed"
-      if (insertedIds.length > 0) {
-        await supabase
-          .from("invoices")
-          .update({ status: "Failed" })
-          .in("id", insertedIds);
-      }
       setError("Network error — could not reach the processing server. Please try again.");
       onUploadComplete();
     } finally {
@@ -159,7 +129,6 @@ export default function UploadPanel({ onUploadComplete }: UploadPanelProps) {
           />
         </div>
 
-        {/* Error */}
         {error && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -167,14 +136,12 @@ export default function UploadPanel({ onUploadComplete }: UploadPanelProps) {
           </div>
         )}
 
-        {/* Warning */}
         {warning && (
           <div className="rounded-md bg-warning/10 p-3 text-sm text-warning-foreground">
             {warning}
           </div>
         )}
 
-        {/* Staging area */}
         {stagedFiles.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm font-medium text-foreground">

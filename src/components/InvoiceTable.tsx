@@ -1,13 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useCurrentOrg } from "@/hooks/useCurrentOrg";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Eye, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
 import InvoiceDetailModal from "./InvoiceDetailModal";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -19,13 +19,12 @@ import type { Tables } from "@/integrations/supabase/types";
 const PAGE_SIZE = 10;
 
 const statusStyles: Record<string, string> = {
-  Pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  Processing: "bg-blue-100 text-blue-800 border-blue-200",
-  Completed: "bg-green-100 text-green-800 border-green-200",
-  Failed: "bg-red-100 text-red-800 border-red-200",
+  processed: "bg-green-100 text-green-800 border-green-200",
+  flagged: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  failed: "bg-red-100 text-red-800 border-red-200",
 };
 
-const STATUSES = ["All", "Pending", "Processing", "Completed", "Failed"];
+const STATUSES = ["All", "processed", "flagged", "failed"];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + " B";
@@ -43,7 +42,7 @@ interface DeleteWebhookResult {
 }
 
 export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
-  const { user } = useAuth();
+  const { currentOrg } = useCurrentOrg();
   const [invoices, setInvoices] = useState<Tables<"invoices">[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -54,13 +53,13 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   const [deleteInvoice, setDeleteInvoice] = useState<Tables<"invoices"> | null>(null);
 
   const fetchInvoices = useCallback(async () => {
-    if (!user) return;
+    if (!currentOrg) return;
     setLoading(true);
 
     let query = supabase
       .from("invoices")
       .select("*", { count: "exact" })
-      .eq("user_id", user.id)
+      .eq("org_id", currentOrg.id)
       .order("uploaded_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -74,26 +73,24 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
       setTotal(count ?? 0);
     }
     setLoading(false);
-  }, [user, page, statusFilter]);
+  }, [currentOrg, page, statusFilter]);
 
   useEffect(() => {
     fetchInvoices();
   }, [fetchInvoices, refreshKey]);
 
-  // Reset to page 0 when filter changes
   useEffect(() => {
     setPage(0);
   }, [statusFilter]);
 
   const handleDelete = async () => {
-    if (!deleteInvoice) return;
+    if (!deleteInvoice || !currentOrg) return;
     const { error } = await supabase.from("invoices").delete().eq("id", deleteInvoice.id);
     if (!error) {
       toast.success("Invoice deleted successfully");
       setInvoices((prev) => prev.filter((inv) => inv.id !== deleteInvoice.id));
       setTotal((prev) => prev - 1);
 
-      // Notify external webhook to remove from Google Sheets
       try {
         const rawInvoiceNumber = (deleteInvoice as any).invoice_number ?? deleteInvoice.file_name ?? "";
         const match = rawInvoiceNumber.match(/(\d+)(?:\.pdf)?$/i);
@@ -102,7 +99,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         const { data: webhookResult, error: webhookError } = await supabase.functions.invoke<DeleteWebhookResult>(
           "delete-invoice-webhook",
           {
-            body: { invoice_number: invoiceNumberToSend },
+            body: { invoice_number: invoiceNumberToSend, org_id: currentOrg.id },
           },
         );
 
@@ -134,10 +131,10 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
+            className="rounded-md border border-input bg-background px-3 py-1.5 text-sm capitalize ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring"
           >
             {STATUSES.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s} className="capitalize">{s}</option>
             ))}
           </select>
         </CardHeader>
@@ -165,12 +162,26 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                 <TableBody>
                   {invoices.map((inv) => (
                     <TableRow key={inv.id}>
-                      <TableCell className="max-w-[200px] truncate font-medium">
-                        {inv.file_name}
+                      <TableCell className="max-w-[220px] font-medium">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">{inv.file_name}</span>
+                          {inv.status === "flagged" && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-yellow-200 bg-yellow-100 text-yellow-800"
+                            >
+                              <AlertTriangle className="mr-1 h-3 w-3" />
+                              Duplicate
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>{formatFileSize(inv.file_size)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={statusStyles[inv.status] ?? ""}>
+                        <Badge
+                          variant="outline"
+                          className={`capitalize ${statusStyles[inv.status] ?? ""}`}
+                        >
                           {inv.status}
                         </Badge>
                       </TableCell>
@@ -200,7 +211,6 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                 </TableBody>
               </Table>
 
-              {/* Pagination */}
               {totalPages > 1 && (
                 <div className="mt-4 flex items-center justify-between">
                   <p className="text-sm text-muted-foreground">
