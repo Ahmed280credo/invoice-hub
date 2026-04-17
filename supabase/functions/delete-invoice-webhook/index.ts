@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json();
     const invoice_number = typeof payload?.invoice_number === "string" ? payload.invoice_number.trim() : "";
+    const org_id = typeof payload?.org_id === "string" ? payload.org_id.trim() : "";
 
     if (!invoice_number) {
       return jsonResponse({ ok: false, error: "invoice_number is required" }, 400);
@@ -30,7 +31,7 @@ Deno.serve(async (req) => {
     const response = await fetch("https://mfin1.app.n8n.cloud/webhook/delete-invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invoice_number }),
+      body: JSON.stringify({ invoice_number, org_id }),
     });
 
     const body = await response.text();
