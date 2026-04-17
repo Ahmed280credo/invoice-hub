@@ -14,12 +14,55 @@ export type Database = {
   }
   public: {
     Tables: {
+      invoice_audit_log: {
+        Row: {
+          created_at: string
+          currency: string | null
+          event: string
+          id: string
+          invoice_number: string | null
+          org_id: string
+          processed_at: string | null
+          source: string | null
+          status: string | null
+          total_amount: number | null
+          vendor_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          event: string
+          id?: string
+          invoice_number?: string | null
+          org_id: string
+          processed_at?: string | null
+          source?: string | null
+          status?: string | null
+          total_amount?: number | null
+          vendor_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          event?: string
+          id?: string
+          invoice_number?: string | null
+          org_id?: string
+          processed_at?: string | null
+          source?: string | null
+          status?: string | null
+          total_amount?: number | null
+          vendor_name?: string | null
+        }
+        Relationships: []
+      }
       invoices: {
         Row: {
           file_name: string
           file_size: number
           file_url: string | null
           id: string
+          org_id: string
           status: string
           uploaded_at: string
           user_id: string
@@ -29,6 +72,7 @@ export type Database = {
           file_size: number
           file_url?: string | null
           id?: string
+          org_id: string
           status?: string
           uploaded_at?: string
           user_id: string
@@ -38,9 +82,63 @@ export type Database = {
           file_size?: number
           file_url?: string | null
           id?: string
+          org_id?: string
           status?: string
           uploaded_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          org_id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          org_id: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          org_id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string
         }
         Relationships: []
       }
@@ -79,10 +177,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_org_ids: { Args: { _user_id: string }; Returns: string[] }
+      has_org_role: {
+        Args: {
+          _org_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_org_member: {
+        Args: { _org_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "owner" | "admin" | "member"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -209,6 +319,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["owner", "admin", "member"],
+    },
   },
 } as const
