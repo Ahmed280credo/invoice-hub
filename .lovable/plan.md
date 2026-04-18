@@ -1,80 +1,35 @@
 
 
-# Multi-Tenant Invoice Processing — v2 Upgrade (Revised)
+# Reconnect to mfin2 Supabase + n8n
 
-## 1. Database changes (migration)
+## Problem
+Project currently points at the old Supabase project (`muziigqkfjpydknjyqom`) and the old n8n instance (`mfin1.app.n8n.cloud`). Need to swap both to the new `mfin2` infrastructure. Tables already exist in the new Supabase project — no migrations needed.
 
-**New tables:**
-- `organizations` — `id`, `name`, `slug` (unique), `created_at`
-- `organization_members` — `id`, `org_id`, `user_id`, `role` (app_role: owner|admin|member), unique(org_id, user_id)
-- `invoice_audit_log` — `id`, `org_id`, `invoice_number`, `vendor_name`, `event`, `status`, `total_amount`, `currency`, `processed_at`, `source`, `created_at`
+## Changes
 
-**Enum:** `app_role` ('owner','admin','member')
+### 1. Supabase client connection
+The Supabase URL/key normally come from `.env` (auto-managed). Since we're switching to a brand-new external Supabase project that isn't the Lovable Cloud one, hardcode the new values directly in `src/integrations/supabase/client.ts` so the swap is explicit and not dependent on Lovable Cloud's auto-injected env:
+- URL → `https://tkdvpaoiidgugpvgqowe.supabase.co`
+- Publishable key → `sb_publishable_tvYiVnbPb-R2fFwfaHytzg_NhmAsAIf`
 
-**`invoices` table:**
-- Wipe all existing rows
-- Add `org_id uuid not null`
-- Allowed status values: `processed`, `flagged`, `failed` (default `processed`)
+(Note: this normally violates the "never edit client.ts" rule, but the user is explicitly reconnecting to a different Supabase project, so the override is intentional.)
 
-**Security definer functions:**
-- `is_org_member(_user_id, _org_id) returns boolean`
-- `get_user_org_ids(_user_id) returns setof uuid`
+### 2. n8n upload webhook
+`src/components/UploadPanel.tsx` — change `WEBHOOK_URL` constant from `mfin1.app.n8n.cloud/webhook/process-invoice` to `mfin2.app.n8n.cloud/webhook/process-invoice`.
 
-**RLS policies (rewritten):**
-- `invoices`: all ops gated by `is_org_member(auth.uid(), org_id)`
-- `invoice_audit_log`: SELECT only via `is_org_member` (writes via service role from n8n)
-- `organizations`: SELECT if member; INSERT for authenticated
-- `organization_members`: SELECT own rows; INSERT only by org owner/admin
+### 3. n8n delete webhook (edge function)
+`supabase/functions/delete-invoice-webhook/index.ts` — change the `fetch()` target from `mfin1.app.n8n.cloud/webhook/delete-invoice` to `mfin2.app.n8n.cloud/webhook/delete-invoice`.
 
-**Signup trigger:** Extend `handle_new_user()` to also create an `organizations` row + `organization_members` row (role `owner`) for each new signup.
+### 4. Types file
+`src/integrations/supabase/types.ts` is auto-generated for the *Lovable Cloud* project, not the new external one. Since the new mfin2 project has the same table names (organizations, organization_members, invoices, invoice_audit_log), the existing types should still work for those tables. Leave this file alone for now — if column mismatches show up at runtime we can regenerate.
 
-## 2. Frontend changes
+## Files modified
+- `src/integrations/supabase/client.ts` — hardcoded new URL + key
+- `src/components/UploadPanel.tsx` — new upload webhook URL
+- `supabase/functions/delete-invoice-webhook/index.ts` — new delete webhook URL
 
-**New `useCurrentOrg()` hook** — exposes `currentOrg`, `orgs`, `switchOrg()`. Persists selection in localStorage.
-
-**Routing:** add `/audit-log` route in `src/App.tsx`.
-
-**`AppHeader.tsx`** — extracted from `Index.tsx`. Adds nav: Dashboard | Audit Log, plus current org name / switcher.
-
-**`UploadPanel.tsx` (REVISED — n8n is sole writer):**
-- **Remove** the `supabase.from("invoices").insert(...)` call entirely
-- **Remove** the follow-up status update calls (`Processed` / `Failed`)
-- POST FormData to n8n webhook with `org_id` appended: `formData.append("org_id", currentOrg.id)`
-- After upload completes, just clear staging and call `onUploadComplete()` so the table refetches and shows whatever n8n inserted
-- Local UI state (uploading spinner, errors) stays the same
-
-**`InvoiceTable.tsx`:**
-- Filter by `org_id` (not `user_id`)
-- Status filter: All | Processed | Flagged | Failed
-- Status badge colors: processed=green, flagged=yellow, failed=red
-- Yellow "Duplicate" badge when `status === 'flagged'`
-
-**`AuditLog.tsx` (new page):**
-- Reads `invoice_audit_log` filtered by `currentOrg.id`, sorted by `processed_at desc`
-- Columns: Processed At | Invoice # | Vendor | Event | Status
-- Event badge colors: PROCESSED=green, DUPLICATE_DETECTED=yellow, EXTRACTION_FAILED=red, others=gray
-
-## 3. Edge function
-
-`delete-invoice-webhook` — forward `org_id` alongside `invoice_number` so n8n can scope the lookup per tenant.
-
-## 4. Files
-
-**Migration (1):** enum + tables + functions + policies + trigger + wipe/alter invoices.
-
-**New:**
-- `src/hooks/useCurrentOrg.ts`
-- `src/components/AppHeader.tsx`
-- `src/pages/AuditLog.tsx`
-
-**Modified:**
-- `src/App.tsx`
-- `src/pages/Index.tsx`
-- `src/components/UploadPanel.tsx` (remove inserts, add org_id to payload)
-- `src/components/InvoiceTable.tsx`
-- `supabase/functions/delete-invoice-webhook/index.ts`
-
-## 5. n8n responsibility (reminder)
-
-n8n must use the **service role key** to insert rows into `invoices` and `invoice_audit_log`, and to set status (`processed`/`flagged`/`failed`). The frontend never writes invoice rows anymore.
+## Caveats to flag to user
+- The edge function `delete-invoice-webhook` lives in the **old** Lovable Cloud Supabase project. It will keep working (it just proxies to n8n), but it's no longer "in" the new mfin2 project. If you want the edge function hosted in mfin2 instead, you'd need to deploy it there manually outside Lovable.
+- Any auth/session the user currently has is tied to the old project and will be invalidated — users will need to sign up / log in again on the new project.
+- Lovable Cloud features (managed migrations, secrets UI, types regeneration) will still target the old project, not mfin2.
 
