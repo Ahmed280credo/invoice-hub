@@ -1,35 +1,40 @@
 
 
-# Reconnect to mfin2 Supabase + n8n
+# Fix "No organization found"
 
-## Problem
-Project currently points at the old Supabase project (`muziigqkfjpydknjyqom`) and the old n8n instance (`mfin1.app.n8n.cloud`). Need to swap both to the new `mfin2` infrastructure. Tables already exist in the new Supabase project — no migrations needed.
+## Root cause (two issues, not one)
 
-## Changes
+**A. PostgREST schema cache is stale.** The new mfin2 project's API layer doesn't yet know about `public.organization_members`, so every query returns `404 PGRST205`. The table exists in Postgres (verified) — only the API cache is behind.
 
-### 1. Supabase client connection
-The Supabase URL/key normally come from `.env` (auto-managed). Since we're switching to a brand-new external Supabase project that isn't the Lovable Cloud one, hardcode the new values directly in `src/integrations/supabase/client.ts` so the swap is explicit and not dependent on Lovable Cloud's auto-injected env:
-- URL → `https://tkdvpaoiidgugpvgqowe.supabase.co`
-- Publishable key → `sb_publishable_tvYiVnbPb-R2fFwfaHytzg_NhmAsAIf`
+**B. Logged-in user has no membership.** Your current session is user `35e3e413-…` (`m.ubaidyaqoob@gmail.com`), but the only membership row points to user `6c095142-…`. So even after the cache reloads, the dashboard will still show "No organization found" for *this* account.
 
-(Note: this normally violates the "never edit client.ts" rule, but the user is explicitly reconnecting to a different Supabase project, so the override is intentional.)
+`is_org_member()` and the `app_role` enum are both correct — no change needed there.
 
-### 2. n8n upload webhook
-`src/components/UploadPanel.tsx` — change `WEBHOOK_URL` constant from `mfin1.app.n8n.cloud/webhook/process-invoice` to `mfin2.app.n8n.cloud/webhook/process-invoice`.
+## Fix
 
-### 3. n8n delete webhook (edge function)
-`supabase/functions/delete-invoice-webhook/index.ts` — change the `fetch()` target from `mfin1.app.n8n.cloud/webhook/delete-invoice` to `mfin2.app.n8n.cloud/webhook/delete-invoice`.
+### Step 1 — Reload PostgREST schema cache (migration)
+Run a one-line SQL command:
+```
+NOTIFY pgrst, 'reload schema';
+```
+This makes the API recognize `organization_members`, `organizations`, `invoices`, and `invoice_audit_log`. After this, the 404s disappear.
 
-### 4. Types file
-`src/integrations/supabase/types.ts` is auto-generated for the *Lovable Cloud* project, not the new external one. Since the new mfin2 project has the same table names (organizations, organization_members, invoices, invoice_audit_log), the existing types should still work for those tables. Leave this file alone for now — if column mismatches show up at runtime we can regenerate.
+### Step 2 — Add the currently-logged-in user to the InvoiceFlow org (data insert)
+Insert a membership row so user `35e3e413-ab87-417b-873f-43387572fe67` becomes an `admin` of org `feaaf612-dffc-4e64-9c00-7c84225e0579`:
+```sql
+INSERT INTO public.organization_members (user_id, org_id, role)
+VALUES ('35e3e413-ab87-417b-873f-43387572fe67',
+        'feaaf612-dffc-4e64-9c00-7c84225e0579',
+        'admin');
+```
 
-## Files modified
-- `src/integrations/supabase/client.ts` — hardcoded new URL + key
-- `src/components/UploadPanel.tsx` — new upload webhook URL
-- `supabase/functions/delete-invoice-webhook/index.ts` — new delete webhook URL
+After both steps: refresh the dashboard and the org should appear. No frontend code changes required — `useCurrentOrg.ts` is correct.
 
-## Caveats to flag to user
-- The edge function `delete-invoice-webhook` lives in the **old** Lovable Cloud Supabase project. It will keep working (it just proxies to n8n), but it's no longer "in" the new mfin2 project. If you want the edge function hosted in mfin2 instead, you'd need to deploy it there manually outside Lovable.
-- Any auth/session the user currently has is tied to the old project and will be invalidated — users will need to sign up / log in again on the new project.
-- Lovable Cloud features (managed migrations, secrets UI, types regeneration) will still target the old project, not mfin2.
+## Alternative (if you'd rather use the other account)
+Skip step 2 and instead log out, then log in as the user that owns `6c095142-…`. The dashboard will work after step 1 alone.
+
+## Files touched
+- 1 new migration (schema reload + membership insert)
+- No frontend changes
+- No RLS changes
 
