@@ -64,7 +64,7 @@ const Auth = () => {
           <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
             <FileText className="h-6 w-6 text-primary-foreground" />
           </div>
-          <CardTitle className="text-2xl">InvoiceFlow</CardTitle>
+          <CardTitle className="text-2xl">Finflow</CardTitle>
           <CardDescription>
             {isLogin ? "Sign in to your account" : "Create a new account"}
           </CardDescription>
