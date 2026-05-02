@@ -35,7 +35,10 @@ const Auth = () => {
       const { error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: { full_name: email.split("@")[0] }, // uses email prefix as name until you add a name field
+        },
       });
       if (error) {
         setError(error.message);

@@ -7,7 +7,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Eye, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { Eye, Trash2, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, DollarSign } from "lucide-react";
 import InvoiceDetailModal from "./InvoiceDetailModal";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -22,9 +22,12 @@ const statusStyles: Record<string, string> = {
   processed: "bg-green-100 text-green-800 border-green-200",
   flagged: "bg-yellow-100 text-yellow-800 border-yellow-200",
   failed: "bg-red-100 text-red-800 border-red-200",
+  pending: "bg-gray-100 text-gray-800 border-gray-200",
+  approved: "bg-blue-100 text-blue-800 border-blue-200",
+  paid: "bg-purple-100 text-purple-800 border-purple-200",
 };
 
-const STATUSES = ["All", "processed", "flagged", "failed"];
+const STATUSES = ["All", "processed", "pending", "approved", "paid", "flagged", "failed"];
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + " B";
@@ -60,7 +63,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
       .from("invoices")
       .select("*", { count: "exact" })
       .eq("org_id", currentOrg.id)
-      .order("uploaded_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
     if (statusFilter !== "All") {
@@ -68,7 +71,10 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
     }
 
     const { data, count, error } = await query;
-    if (!error && data) {
+
+    if (error) {
+      console.error("Fetch error:", error);
+    } else if (data) {
       setInvoices(data);
       setTotal(count ?? 0);
     }
@@ -80,8 +86,61 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
   }, [fetchInvoices, refreshKey]);
 
   useEffect(() => {
-    setPage(0);
-  }, [statusFilter]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") fetchInvoices();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [fetchInvoices]);
+
+  useEffect(() => {
+    if (!currentOrg) return;
+    const channel = supabase
+      .channel("invoices-realtime")
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "invoices",
+        filter: `org_id=eq.${currentOrg.id}`,
+      }, () => fetchInvoices())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentOrg, fetchInvoices]);
+
+  useEffect(() => { setPage(0); }, [statusFilter]);
+
+  const handleStatusUpdate = async (inv: Tables<"invoices">, newStatus: string) => {
+    const { error } = await supabase
+      .from("invoices")
+      .update({ status: newStatus })
+      .eq("id", inv.id);
+
+    if (error) {
+      toast.error(`Failed to update status`);
+      return;
+    }
+
+    // Log to audit trail
+    await supabase.from("invoice_audit_log").insert({
+      org_id: inv.org_id,
+      invoice_number: (inv as any).invoice_number ?? null,
+      vendor_name: inv.vendor_name ?? null,
+      event: "status_change",
+      status: newStatus,
+      total_amount: inv.total_amount ?? null,
+      currency: inv.currency ?? "PKR",
+      source: "manual",
+    });
+
+    toast.success(`Invoice marked as ${newStatus}`);
+    setInvoices((prev) =>
+      prev.map((i) => (i.id === inv.id ? { ...i, status: newStatus } : i))
+    );
+    // Keep modal in sync
+    if (selectedInvoice?.id === inv.id) {
+      setSelectedInvoice({ ...inv, status: newStatus });
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteInvoice || !currentOrg) return;
@@ -98,9 +157,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
 
         const { data: webhookResult, error: webhookError } = await supabase.functions.invoke<DeleteWebhookResult>(
           "delete-invoice-webhook",
-          {
-            body: { invoice_number: invoiceNumberToSend, org_id: currentOrg.id },
-          },
+          { body: { invoice_number: invoiceNumberToSend, org_id: currentOrg.id } },
         );
 
         if (webhookError) {
@@ -166,10 +223,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                         <div className="flex items-center gap-2">
                           <span className="truncate">{inv.file_name}</span>
                           {inv.status === "flagged" && (
-                            <Badge
-                              variant="outline"
-                              className="shrink-0 border-yellow-200 bg-yellow-100 text-yellow-800"
-                            >
+                            <Badge variant="outline" className="shrink-0 border-yellow-200 bg-yellow-100 text-yellow-800">
                               <AlertTriangle className="mr-1 h-3 w-3" />
                               Duplicate
                             </Badge>
@@ -178,10 +232,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                       </TableCell>
                       <TableCell>{formatFileSize(inv.file_size)}</TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={`capitalize ${statusStyles[inv.status] ?? ""}`}
-                        >
+                        <Badge variant="outline" className={`capitalize ${statusStyles[inv.status] ?? ""}`}>
                           {inv.status}
                         </Badge>
                       </TableCell>
@@ -190,6 +241,26 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {inv.status === "processed" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Approve"
+                              onClick={() => handleStatusUpdate(inv, "approved")}
+                            >
+                              <CheckCircle className="h-4 w-4 text-blue-600" />
+                            </Button>
+                          )}
+                          {inv.status === "approved" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title="Mark as Paid"
+                              onClick={() => handleStatusUpdate(inv, "paid")}
+                            >
+                              <DollarSign className="h-4 w-4 text-purple-600" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -217,23 +288,11 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
                     Page {page + 1} of {totalPages} ({total} total)
                   </p>
                   <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page === 0}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
+                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                      <ChevronLeft className="h-4 w-4" /> Previous
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages - 1}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
+                    <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                      Next <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -247,6 +306,7 @@ export default function InvoiceTable({ refreshKey }: InvoiceTableProps) {
         invoice={selectedInvoice}
         open={modalOpen}
         onOpenChange={setModalOpen}
+        onStatusUpdate={handleStatusUpdate}
       />
 
       <AlertDialog open={!!deleteInvoice} onOpenChange={(open) => { if (!open) setDeleteInvoice(null); }}>

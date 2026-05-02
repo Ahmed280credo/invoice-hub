@@ -32,7 +32,7 @@ export default function AppHeader() {
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <FileText className="h-4 w-4 text-primary-foreground" />
             </div>
-            <h1 className="text-xl font-bold text-foreground">InvoiceFlow</h1>
+            <h1 className="text-xl font-bold text-foreground">Finflow</h1>
           </div>
           <nav className="flex items-center gap-1">
             <NavLink to="/" end className={navLinkClass}>
@@ -41,7 +41,7 @@ export default function AppHeader() {
             </NavLink>
             <NavLink to="/audit-log" className={navLinkClass}>
               <ScrollText className="h-4 w-4" />
-              Audit Log
+              Activity Logs
             </NavLink>
           </nav>
         </div>

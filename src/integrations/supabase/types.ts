@@ -21,7 +21,7 @@ export type Database = {
           event: string
           id: string
           invoice_number: string | null
-          org_id: string
+          org_id: any
           processed_at: string | null
           source: string | null
           status: string | null
@@ -58,6 +58,12 @@ export type Database = {
       }
       invoices: {
         Row: {
+          due_date: import("react/jsx-runtime").JSX.Element
+          invoice_date: ReactNode
+          invoice_date: import("react/jsx-runtime").JSX.Element
+          currency: string
+          total_amount: import("react/jsx-runtime").JSX.Element
+          vendor_name: import("react/jsx-runtime").JSX.Element
           file_name: string
           file_size: number
           file_url: string | null

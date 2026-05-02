@@ -27,10 +27,14 @@ export function useCurrentOrg() {
 
     (async () => {
       setLoading(true);
+
       const { data, error } = await supabase
         .from("organization_members")
         .select("role, organizations:org_id(id, name, slug)")
         .eq("user_id", user.id);
+
+      console.log("useCurrentOrg - user.id:", user.id);
+      console.log("useCurrentOrg - supabase response:", JSON.stringify({ data, error }, null, 2));
 
       if (error || !data) {
         setOrgs([]);
@@ -58,7 +62,7 @@ export function useCurrentOrg() {
   }, [user]);
 
   const switchOrg = useCallback((orgId: string) => {
-    const next = orgs.find((o) => o.id === orgId);
+    const next = orgs.find((o: { id: string; }) => o.id === orgId);
     if (next) {
       setCurrentOrg(next);
       localStorage.setItem(STORAGE_KEY, next.id);

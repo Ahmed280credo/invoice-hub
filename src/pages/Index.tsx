@@ -12,11 +12,19 @@ const Index = () => {
   const navigate = useNavigate();
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // 1. Handle Navigation separately
   useEffect(() => {
-    if (!loading && !user) navigate("/auth", { replace: true });
+    if (!loading && !user) {
+      navigate("/auth", { replace: true });
+    }
   }, [user, loading, navigate]);
 
-  if (loading || orgLoading) {
+  // 2. Optimized Loading Check
+  // Only show the spinner if we have NO user and NO org data yet.
+  // This stops the page from refreshing/resetting when switching tabs.
+  const isInitialLoading = loading || (orgLoading && !currentOrg);
+
+  if (isInitialLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
@@ -24,6 +32,7 @@ const Index = () => {
     );
   }
 
+  // Final safety check
   if (!user) return null;
 
   return (
@@ -31,17 +40,25 @@ const Index = () => {
       <AppHeader />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {!currentOrg ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            No organization found for your account.
-          </p>
+          <div className="py-20 text-center">
+            <p className="text-sm text-muted-foreground">
+              No organization found for your account. 
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              (Check Supabase organization_members table)
+            </p>
+          </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-            <div>
+            {/* The Sidebar (Upload) */}
+            <aside>
               <UploadPanel onUploadComplete={() => setRefreshKey((k) => k + 1)} />
-            </div>
-            <div>
+            </aside>
+            
+            {/* The Main Content (Table) */}
+            <section>
               <InvoiceTable refreshKey={refreshKey} />
-            </div>
+            </section>
           </div>
         )}
       </main>
